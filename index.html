@@ -277,6 +277,12 @@ const STEP_ORDER=[2,1,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17];
 const SRANK=Object.fromEntries(STEP_ORDER.map((s,i)=>[s,i]));SRANK[0]=99;SRANK[-1]=100;
 const BUILT=RAW.q.map(r=>({id:r[0],title:r[1],step:r[2],d:r[3],url:r[4],alt:r[5],core:r[6]==='c'&&r[2]!==0,src:r[7]?r[7].split(','):[],co:r[8]?r[8].split(','):[],prem:!!r[9],a2z:r[10],min:(r[2]<=1&&r[3]==='E')?8:MIN[r[3]]}));
 BUILT.forEach((q,i)=>{q.lists=(q.a2z?['Striver A2Z']:[]).concat(q.src);q.ord=i;});
+/* 90-day plan: 252 frequently asked interview questions (63 solve days x 4), one per pattern, in study order.
+   Everything else stays in the bank as Extended, with all its saved progress. */
+const PER_DAY=4;
+const PLAN_IDS=["a2z-35","a2z-38","a2z-53","a2z-45","a2z-44","a2z-54","a2z-55","a2z-56","a2z-58","a2z-62","lc-group-anagrams","lc-product-of-array-except-self","a2z-66","a2z-60","a2z-63","a2z-64","a2z-65","a2z-69","a2z-73","a2z-74","a2z-78","a2z-76","lc-insert-delete-getrandom-o1","lc-first-missing-positive","a2z-79","a2z-84","a2z-86","a2z-88","a2z-90","a2z-91","a2z-107","a2z-108","a2z-94","a2z-99","a2z-100","lc-time-based-key-value-store","a2z-104","a2z-112","a2z-114","a2z-115","a2z-116","a2z-120","a2z-118","a2z-121","a2z-123","a2z-136","a2z-135","lc-merge-two-sorted-lists","a2z-138","a2z-139","a2z-143","a2z-141","a2z-142","a2z-147","a2z-149","a2z-146","a2z-154","lc-reorder-list","a2z-156","lc-design-browser-history","lc-design-circular-queue","a2z-153","a2z-158","a2z-161","a2z-162","a2z-163","a2z-164","a2z-168","a2z-169","lc-permutations","a2z-173","a2z-174","a2z-175","a2z-179","lc-partition-to-k-equal-sum-subsets","a2z-176","a2z-180","a2z-181","a2z-185","a2z-191","a2z-194","lc-counting-bits","lc-sum-of-two-integers","a2z-189","a2z-197","lc-multiply-strings","a2z-203","a2z-206","a2z-207","a2z-208","lc-evaluate-reverse-polish-notation","lc-validate-stack-sequences","lc-simplify-path","lc-decode-string","a2z-220","a2z-214","lc-car-fleet","a2z-222","a2z-227","a2z-219","a2z-223","a2z-218","a2z-225","a2z-228","a2z-229","lc-maximum-frequency-stack","lc-valid-palindrome-ii","lc-container-with-most-water","lc-boats-to-save-people","lc-interval-list-intersections","lc-find-k-closest-elements","a2z-230","lc-permutation-in-string","lc-minimum-size-subarray-sum","a2z-231","a2z-232","a2z-233","lc-subarray-product-less-than-k","a2z-236","a2z-237","a2z-239","a2z-240","lc-substring-with-concatenation-of-all-words","a2z-243","a2z-246","a2z-258","a2z-254","a2z-252","a2z-251","lc-find-k-pairs-with-smallest-sums","lc-single-threaded-cpu","a2z-253","lc-maximum-subsequence-score","a2z-249","a2z-257","lc-smallest-range-covering-elements-from-k-lists","a2z-259","a2z-260","a2z-264","a2z-265","a2z-266","a2z-267","a2z-268","lc-gas-station","lc-partition-labels","lc-two-city-scheduling","a2z-272","a2z-269","a2z-284","a2z-282","a2z-288","a2z-289","a2z-290","a2z-292","lc-invert-binary-tree","a2z-298","a2z-294","a2z-295","a2z-300","a2z-301","a2z-302","lc-count-good-nodes-in-binary-tree","lc-check-completeness-of-a-binary-tree","a2z-306","a2z-304","lc-path-sum-iii","a2z-308","a2z-313","a2z-312","lc-find-duplicate-subtrees","lc-house-robber-iii","a2z-291","a2z-310","lc-convert-sorted-array-to-binary-search-tree","a2z-322","a2z-321","a2z-323","a2z-320","a2z-325","a2z-324","a2z-327","a2z-328","a2z-329","lc-number-of-islands","a2z-338","lc-clone-graph","a2z-343","lc-pacific-atlantic-water-flow","a2z-347","a2z-341","a2z-348","a2z-349","a2z-350","a2z-354","a2z-355","a2z-356","lc-minimum-height-trees","a2z-345","lc-shortest-bridge","a2z-358","a2z-359","a2z-363","lc-evaluate-division","a2z-367","a2z-368","a2z-380","a2z-372","a2z-371","a2z-374","a2z-377","a2z-376","a2z-379","lc-reconstruct-itinerary","a2z-381","a2z-383","a2z-385","a2z-389","a2z-390","lc-decode-ways","a2z-391","a2z-394","a2z-396","a2z-397","a2z-404","a2z-402","a2z-403","a2z-405","lc-combination-sum-iv","lc-minimum-cost-for-tickets","a2z-178","a2z-408","a2z-410","a2z-415","a2z-416","a2z-417","lc-regular-expression-matching","lc-interleaving-string","a2z-421","a2z-424","a2z-428","lc-longest-increasing-path-in-a-matrix","a2z-431","a2z-434","a2z-436","a2z-439","lc-stone-game","a2z-440","lc-design-add-and-search-words-data-structure","a2z-445","lc-word-search-ii","a2z-448","a2z-452"];
+const PRANK=Object.fromEntries(PLAN_IDS.map((id,i)=>[id,i]));
+BUILT.forEach(q=>{q.core=q.id in PRANK;});
 const BM=Object.fromEntries(BUILT.map(b=>[b.id,b]));
 const LISTS=['Striver A2Z','Blind 75','NeetCode 150','LeetCode Patterns','NeetCode All','My questions'];
 const STAGES=['Saw First Time','Did Once','Did By Myself','Remembered Whole Approach at One Glance','Will Remember Whole Life'];
@@ -307,7 +313,7 @@ const LINKS={0:[['Striver A2Z sheet','https://takeuforward.org/strivers-a2z-dsa-
 /* ---------- state (loaded from Supabase) ---------- */
 let sb=null,USER=null;
 const S={theme:'dark',scope:'core',startDate:null,intervals:[1,3,7,14,30],daysDone:new Set(),customTopics:[]};
-const T={daily_questions:5,weekly_questions:25,daily_revisions:5,weekly_revisions:25};
+const T={daily_questions:4,weekly_questions:20,daily_revisions:5,weekly_revisions:25};
 let ROWS=new Map();  // key -> questions row; key = builtin_id for sheet questions, row id for your own
 let HIST=[];         // revision_history rows, each tagged with qk (question key)
 let ACT={};          // local date -> activity count (streak)
@@ -353,7 +359,7 @@ function rebuild(){
   const mine=[...ROWS.values()].filter(r=>!r.builtin_id).sort((a,b)=>(a.date_added||'').localeCompare(b.date_added||'')||(a.created_at||'').localeCompare(b.created_at||''));
   mine.forEach((r,i)=>QS.push({key:r.id,custom:true,title:r.title,url:r.url||'',alt:'',step:-1,topic:r.topic,d:r.difficulty,pattern:r.pattern||'',core:false,src:[],co:[],prem:false,a2z:0,lists:['My questions'],min:MIN[r.difficulty]||25,ord:1e6+i,added:r.date_added}));
   QM=Object.fromEntries(QS.map(q=>[q.key,q]));
-  CORE=QS.filter(q=>q.core).sort((x,y)=>SRANK[x.step]-SRANK[y.step]||(x.a2z?0:1)-(y.a2z?0:1)||x.ord-y.ord);
+  CORE=QS.filter(q=>q.core).sort((x,y)=>PRANK[x.key]-PRANK[y.key]);
   buildPlan();
 }
 function topicList(){const out=[...TOPICS];for(const t of S.customTopics)if(!out.includes(t))out.push(t);for(const q of QS)if(q.topic&&!out.includes(q.topic))out.push(q.topic);return out;}
@@ -363,15 +369,15 @@ function scopeList(){return S.scope==='all'?QS:QS.filter(q=>q.core||q.custom||ge
 /* ---------- schedule ----------
    Calendar roles follow real weekdays: Monday = revise fundamentals, Tuesday–Saturday = solve,
    Sunday = weekly revision, Day 90 = final review. Plan questions (Arrays onwards) are spread over
-   the solve days in sheet order, weighted by estimated minutes. */
+   the solve days in plan order, 4 per day. */
 function roleOf(d){if(d===DAYS)return 'final';const wd=pd(add(S.startDate,d-1)).getDay();return wd===1?'fund':wd===0?'rev':'solve';}
 const movedOf=q=>get(q.key).plan_day;
 function buildPlan(){
   const solve=[];for(let d=1;d<=DAYS;d++)if(roleOf(d)==='solve')solve.push(d);
-  const total=CORE.reduce((a,q)=>a+q.min,0)||1;let cum=0;const base={};
-  for(const q of CORE){const mid=cum+q.min/2;base[q.key]=solve[Math.min(solve.length-1,Math.floor(mid/total*solve.length))];cum+=q.min;}
+  const base={};
+  CORE.forEach((q,i)=>{base[q.key]=solve[Math.min(solve.length-1,Math.floor(i/PER_DAY))];});
   const byDay={};for(const q of CORE.concat(QS.filter(x=>!x.core))){const d=movedOf(q)||base[q.key];if(d)(byDay[d]=byDay[d]||[]).push(q);}
-  PLAN={solve,base,byDay,perDay:Math.round(total/solve.length)};
+  PLAN={solve,base,byDay,perDay:PER_DAY};
 }
 const dayOf=q=>movedOf(q)||PLAN.base[q.key];
 const dateOf=d=>add(S.startDate,d-1);
@@ -465,6 +471,10 @@ function apply(d){
   if(fix)saveSettings();
   if(d.tg){for(const k of Object.keys(T))if(Number.isInteger(d.tg[k]))T[k]=d.tg[k];}
   if(!d.tg)saveTargets();
+  else if(T.daily_questions===5&&T.weekly_questions===25){
+    let done=false;try{done=localStorage.getItem('dsa-targets-4x5')==='1';}catch(e){}
+    if(!done){T.daily_questions=4;T.weekly_questions=20;saveTargets();try{localStorage.setItem('dsa-targets-4x5','1');}catch(e){}}
+  }
   ROWS=new Map();const idKey={};
   for(const r of d.qs){if(!Array.isArray(r.stages)||r.stages.length!==5)r.stages=[false,false,false,false,false];ROWS.set(keyOf(r),r);idKey[r.id]=keyOf(r);}
   HIST=d.hs.filter(h=>idKey[h.question_id]).map(h=>({...h,qk:idKey[h.question_id]}));
@@ -580,6 +590,7 @@ function dayBlock(d){
     const done=wq.filter(q=>dayOf(q)<d);
     body=done.length?`<div class="note">Recall each approach from this week without code, re-solve anything below "Solo", say the complexity aloud, then update the boxes. ${done.length} questions this week; ${done.filter(q=>!isSolved(get(q.key))).length} not yet solved alone.</div>`
       :`<div class="note">Nothing to revise yet this week.</div>`;
+  }else if(role==='solve'&&!qs.length&&d>PLAN.base[CORE[CORE.length-1]?.key]){body=`<div class="note">Catch-up day: no new questions. Finish anything left unsolved or clear due revisions.</div>`;
   }else if(role==='final')body=`<div class="note">Final review: clear overdue revisions, then re-attempt your weakest questions from the Questions tab (Unsolved).</div>`;
   if(qs.length){const m=qs.reduce((a,q)=>a+q.min,0);body+=`<p class="small muted" style="margin:${body?'10px':'0'} 0 8px">${qs.length} items, about ${Math.round(m/6)/10} h</p>`+list(qs);}
   const lbl={fund:'Fundamentals',solve:'Solve',rev:'Weekly revision',final:'Final review'}[role],dn=S.daysDone.has(d);
@@ -624,7 +635,7 @@ V.today=()=>{
 };
 
 V.plan=()=>{
-  let h=`<h1>90-day plan</h1><p class="muted">Mondays revise fundamentals, Tuesday to Saturday solve, Sundays revise the week. The plan starts with Arrays (Basics is left out) and then follows Striver's order; within each topic the A2Z questions come first, then the extra ones from Blind 75, NeetCode 150 and LeetCode Patterns.</p><div style="margin-top:18px">`;
+  let h=`<h1>90-day plan</h1><p class="muted">Mondays prepare the week’s topic, Tuesday to Saturday solve 4 questions a day (20 a week), Sundays revise the week. The plan holds 252 frequently asked interview questions, one per pattern, from Arrays to Tries; every other question stays in the Questions tab as Extended, with its progress kept.</p><div style="margin-top:18px">`;
   for(let w=1;w<=Math.ceil(DAYS/7);w++){
     const wq=weekQs(w),s=stats(wq),open=UI.open.has(w),st=stepsIn(wq).map(i=>STEPS[i]);
     const a=(w-1)*7+1,b=Math.min(w*7,DAYS);
