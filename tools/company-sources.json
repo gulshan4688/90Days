@@ -1,0 +1,23 @@
+{
+  "sources": [
+    {"id": "snehasishroy", "repo": "https://github.com/snehasishroy/leetcode-companywise-interview-questions", "as_of": "readme"},
+    {"id": "liquidslr", "repo": "https://github.com/liquidslr/leetcode-company-wise-problems", "as_of": "commit"}
+  ],
+  "company_aliases": {
+    "airbusse": "airbus", "billholdings": "billcom", "citigroup": "citi", "cruise": "cruiseautomation",
+    "edelweissgroup": "edelweiss", "hudsonrivertrading": "hrt", "lendingkarttechnologies": "lendingkart",
+    "lowes": "lowe", "nationalpaymentscorporationofindia": "nationalpaymentscoorperationindia", "olacabs": "ola",
+    "palantirtechnologies": "palantir", "snap": "snapchat", "towerresearchcapital": "towerresearch",
+    "veevasystems": "veeva", "virtufinancial": "virtu", "wissentechnology": "wissen", "x": "twitter", "block": "square",
+    "facebook": "meta"
+  },
+  "company_names": {
+    "hrt": "Hudson River Trading", "att": "AT&T", "bcg": "BCG", "billcom": "Bill.com", "jtg": "JTG", "ust": "UST",
+    "dtcc": "DTCC", "kpmg": "KPMG", "exl": "EXL", "fico": "FICO", "gep": "GEP", "hbo": "HBO", "htc": "HTC", "jd": "JD.com",
+    "olx": "OLX", "tiaa": "TIAA", "twitter": "X (Twitter)", "square": "Block (Square)", "snapchat": "Snap",
+    "nationalpaymentscoorperationindia": "NPCI", "lowe": "Lowe’s", "mcdonalds": "McDonald’s", "1kosmos": "1Kosmos",
+    "6sense": "6sense", "c3ai": "C3 AI", "f5networks": "F5 Networks", "lgelectronics": "LG Electronics",
+    "klatencor": "KLA-Tencor", "dji": "DJI", "bnpparibas": "BNP Paribas", "btgroup": "BT Group", "tcs": "TCS",
+    "ibm": "IBM", "sap": "SAP", "amd": "AMD", "pornhub": "Pornhub", "deepmind": "DeepMind", "github": "GitHub"
+  }
+}
