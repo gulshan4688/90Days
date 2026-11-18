@@ -230,6 +230,37 @@ details.ed summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:
   .ck::after{content:attr(data-l);font-size:10px;color:var(--muted)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- Search by Companies (scoped to this tab) ---------- */
+body.pitch{background:#000}
+body.pitch .top{background:#000;border-bottom-color:#161616}
+.cs{color:#fff;font-size:13px;line-height:1.5;max-width:760px}
+.cs .cs-g{color:#777}
+.cs a{color:#fff}.cs a:hover{text-decoration:underline}
+.cs input#cq{width:100%;background:#000;color:#fff;border:0;border-bottom:1px solid #2a2a2a;border-radius:0;padding:8px 0;font-size:14px;outline:none}
+.cs input#cq:focus{border-bottom-color:#777}
+.cs input#cq::placeholder{color:#555}
+.cs .cs-hint{margin-top:6px;font-size:12px}
+.cs .cs-ml{margin-top:14px}
+.cs .cs-mi{all:unset;box-sizing:border-box;text-align:left;display:flex;gap:10px;width:100%;padding:3px 0;cursor:pointer;color:#777}
+.cs .cs-mi:hover,.cs .cs-mi[aria-pressed="true"]{color:#fff}
+.cs .cs-mi .cs-n{min-width:44px;text-align:right}
+.cs .cs-mi:focus-visible{outline:1px solid #777}
+.cs .cs-qh{margin-top:22px;padding-bottom:8px;border-bottom:1px solid #1c1c1c}
+.cs .cs-qh b{font-weight:500}
+.cs .cs-cr{all:unset;box-sizing:border-box;text-align:left;display:grid;grid-template-columns:minmax(0,1fr) 64px 250px;gap:12px;width:100%;padding:4px 0;cursor:pointer}
+.cs .cs-cr:hover .cs-cn{text-decoration:underline}
+.cs .cs-cr:focus-visible{outline:1px solid #777}
+.cs .cs-cr .cs-f{text-align:right}
+.cs .cs-ch{display:grid;grid-template-columns:minmax(0,1fr) 64px 250px;gap:12px;padding:10px 0 4px;font-size:11.5px;color:#777}
+.cs .cs-ch span:nth-child(2){text-align:right}
+.cs .cs-src{padding:0 0 6px 14px;font-size:12px}
+.cs .cs-note{margin-top:18px;font-size:11.5px;color:#555;background:none;border:0;padding:0}
+@media (max-width:560px){.cs .cs-cr,.cs .cs-ch{grid-template-columns:minmax(0,1fr) 48px}.cs .cs-cr .cs-l,.cs .cs-ch .cs-l{grid-column:1/-1;margin-top:-4px}.cs .cs-ch .cs-l{display:none}}
+body.pitch nav button[aria-current="page"]{background:#141414;color:#fff}
+body.pitch nav button{color:#777}
+body.pitch #addTop{display:none}
+.cs .cs-qh a{font-weight:500}
 </style>
 </head>
 <body class="out">
@@ -241,6 +272,7 @@ details.ed summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:
     <button data-act="nav" data-view="questions">Questions</button>
     <button data-act="nav" data-view="revision">Revision</button>
     <button data-act="nav" data-view="settings">Settings</button>
+    <button data-act="nav" data-view="companies">Search by Companies</button>
   </nav>
   <button class="btn pri sm" id="addTop" data-act="addq">Add question</button>
 </div></header>
@@ -716,16 +748,108 @@ V.auth=()=>{const up=UI.authMode==='up';
 V.recover=()=>`<div class="auth"><h1>Set a new password</h1><form id="recForm" novalidate><label class="fld"><span>New password (at least 6 characters)</span><input type="password" id="rPass" autocomplete="new-password" required></label><p class="aerr" id="aErr" role="alert"></p><button class="btn pri" type="submit">Save password</button></form></div>`;
 const loadingView=msg=>`<div class="loading"><span class="spin"></span>${esc(msg)}</div>`;
 
+/* ---------- Search by Companies ----------
+   Read-only and separate from the tracker: it never touches Supabase or tracker state. It loads
+   company-data.json (built by tools/build_company_data.py from the GitHub repos) once, indexes it
+   in memory, and searches that index as you type. */
+const CD={data:null,idx:null,loading:null,err:'',q:'',sel:null,open:new Set(),matches:[]};
+const CWIN={30:'≤ 30 days',60:'≤ 60 days',90:'≤ 3 months',180:'≤ 6 months',365:'≤ 1 year',9999:'> 6 months',0:'all-time list'};
+const cdNorm=t=>String(t||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+const cdDate=s=>pd(s).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+function cdLoad(){
+  if(CD.data||CD.loading)return;
+  CD.err='';
+  CD.loading=fetch('company-data.json',{cache:'no-cache'})
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(d=>{CD.data=d;CD.idx=d.q.map((q,i)=>{const tn=cdNorm(q[2]);return {i,key:q[0],p:q[0].split(':')[0],n:q[1]||0,t:q[2],d:q[3],tn,tc:tn.replace(/ /g,''),c:d.a[i].length/4};});
+      CD.newest=d.sources.reduce((m,x)=>x.as_of>m?x.as_of:m,'');if(CD.q)cdRun();})
+    .catch(e=>{CD.err=location.protocol==='file:'?'This tab needs the page to be served over http(s), for example from GitHub Pages. Browsers block reading company-data.json from a local file.':'Could not load company-data.json ('+e.message+'). Make sure it sits next to index.html in your repo.';})
+    .finally(()=>{CD.loading=null;if(VIEW==='companies')cdPaint();});
+}
+function cdSearch(raw){
+  let s=raw.toLowerCase().replace(/\s*[-–|]\s*(leetcode|geeksforgeeks|gfg)\s*$/,'').trim(),plat=null;
+  const pm=s.match(/^(lc|leetcode|gfg|geeksforgeeks)\b[\s:#.-]*/);if(pm){plat=pm[1][0]==='g'?'gfg':'lc';s=s.slice(pm[0].length);}
+  const nm=s.match(/^#?(\d+)(?:$|[\s.):-]+(.*)$)/),num=nm?+nm[1]:null,digits=nm?nm[1]:'';
+  const rest=cdNorm(nm?nm[2]||'':s),restC=rest.replace(/ /g,''),full=cdNorm(s),fullC=full.replace(/ /g,'');
+  if(!fullC)return [];
+  const out=[];
+  for(const q of CD.idx){
+    if(plat&&q.p!==plat)continue;
+    let sc=0;
+    if(num!==null&&q.n===num)sc=1000;
+    else if(num!==null&&!restC&&q.n&&String(q.n).startsWith(digits))sc=400-String(q.n).length;
+    const tryText=(n,c)=>{if(!c)return 0;if(q.tc===c)return 900;if(q.tn.startsWith(n))return 700;if((' '+q.tn).includes(' '+n))return 600;if(q.tc.includes(c))return 300;return 0;};
+    const pureNum=num!==null&&!restC;
+    sc=Math.max(sc,pureNum?Math.min(200,tryText(full,fullC)):tryText(full,fullC),num!==null&&restC?tryText(rest,restC)-50:0);
+    if(sc>0)out.push([sc,q]);
+  }
+  out.sort((a,b)=>b[0]-a[0]||b[1].c-a[1].c||(a[1].n||1e9)-(b[1].n||1e9)||a[1].key.localeCompare(b[1].key));
+  return out.map(x=>x[1]);
+}
+function cdRun(){
+  CD.matches=CD.q.trim()&&CD.idx?cdSearch(CD.q):[];
+  CD.sel=CD.matches.length?CD.matches[0].i:null;   // best match is shown straight away; clicking another overrides it
+}
+/* Merge one question's per-repo records into one row per company. Counts are never added up:
+   frequency comes from the newest repo that lists the pair, recency from the most recent window
+   in any repo, and every repo's own record stays visible under the row. */
+function cdCompanies(i){
+  const d=CD.data,a=d.a[i],by=new Map(),now=pd(CD.newest);
+  for(let j=0;j<a.length;j+=4){const c=a[j];if(!by.has(c))by.set(c,[]);by.get(c).push({s:a[j+1],f:a[j+2]/10,w:a[j+3]});}
+  const rows=[];
+  for(const [c,recs] of by){
+    let best=null,bestAge=Infinity,freqRec=null;
+    for(const r of recs){
+      const asOf=d.sources[r.s].as_of,lag=diff(asOf,CD.newest);
+      const age=r.w&&r.w<9999?lag+r.w:lag+365;  // > 6 months or unknown: treat as about a year old
+      r.age=age;r.asOf=asOf;
+      if(age<bestAge||(age===bestAge&&asOf>best.asOf)){bestAge=age;best=r;}
+      if(!freqRec||asOf>freqRec.asOf||(asOf===freqRec.asOf&&r.f>freqRec.f))freqRec=r;
+    }
+    const f=freqRec.f,score=0.55*(f/100)+0.45*Math.exp(-bestAge/150);
+    rows.push({c,name:d.companies[c],f,best,recs:recs.sort((x,y)=>y.asOf.localeCompare(x.asOf)),score});
+  }
+  rows.sort((x,y)=>y.score-x.score||y.f-x.f||x.name.localeCompare(y.name));
+  return rows;
+}
+const cdUrl=q=>q.p==='gfg'?`https://www.geeksforgeeks.org/problems/${q.key.slice(4)}/1`:`https://leetcode.com/problems/${q.key.slice(3)}/`;
+const cdLabel=q=>(q.p==='gfg'?'GFG':'LeetCode')+(q.n?' '+q.n:'');
+const cdF=f=>(Math.round(f*10)/10).toString();
+function cdResults(){
+  if(CD.err)return `<p class="cs-g cs-ml">${esc(CD.err)}</p>`;
+  if(!CD.data)return `<p class="cs-g cs-ml">Loading company data…</p>`;
+  if(!CD.q.trim())return `<p class="cs-g cs-ml">${CD.idx.length.toLocaleString()} questions from ${CD.data.companies.length} companies. Try “two sum”, “15”, “binary tree” or “lc 543”.</p>`;
+  if(!CD.matches.length){const g=/^\s*(gfg|geeksforgeeks)\b/i.test(CD.q)&&!CD.idx.some(q=>q.p==='gfg');
+    return `<p class="cs-g cs-ml">No question matches “${esc(CD.q.trim())}”.${g?' None of the current sources has GeeksforGeeks data yet.':''}</p>`;}
+  const shown=CD.matches.slice(0,8);
+  let h=`<div class="cs-ml" role="list">${shown.map(q=>`<button class="cs-mi" role="listitem" data-act="cdpick" data-i="${q.i}" aria-pressed="${q.i===CD.sel}"><span class="cs-n">${q.n||'–'}</span><span>${esc(q.t)}</span></button>`).join('')}${CD.matches.length>8?`<p class="cs-g" style="padding-left:54px">${CD.matches.length-8} more, keep typing to narrow down</p>`:''}</div>`;
+  const q=CD.idx[CD.sel];if(!q)return h;
+  const rows=cdCompanies(q.i);
+  h+=`<div class="cs-qh"><b><a href="${esc(cdUrl(q))}" target="_blank" rel="noopener">${esc(q.t)}</a></b> <span class="cs-g">· ${cdLabel(q)}${q.d?' · '+DIFF[q.d]:''} · ${rows.length} compan${rows.length===1?'y':'ies'}</span></div>
+  <div class="cs-ch"><span>Company</span><span>Frequency</span><span class="cs-l">Latest seen</span></div>`;
+  h+=rows.map(r=>{const o=CD.open.has(r.c),b=r.best;
+    return `<button class="cs-cr" data-act="cdrow" data-c="${r.c}" aria-expanded="${o}"><span class="cs-cn">${esc(r.name)}${r.recs.length>1?' <span class="cs-g">·'+r.recs.length+'</span>':''}</span><span class="cs-f">${cdF(r.f)}</span><span class="cs-l cs-g">${CWIN[b.w]||'–'}, as of ${cdDate(b.asOf)}</span></button>`
+      +(o?r.recs.map(x=>`<div class="cs-src cs-g">${esc(CD.data.sources[x.s].id)}: frequency ${cdF(x.f)}, ${CWIN[x.w]||'–'}, snapshot ${cdDate(x.asOf)}</div>`).join(''):'');}).join('');
+  h+=`<p class="cs-note">Frequency is LeetCode’s 0–100 score for how often a company asks the question, relative to that company’s other questions. Latest seen is the most recent time window the question appears in, counted back from each repo’s snapshot date. The source repos don’t record exact counts or dates. Sorted by frequency and recency together. A small number after a company (·2) means that many repos list it. Tap a company to see each repo’s record. Sources: ${CD.data.sources.map(x=>`<a href="${esc(x.repo)}" target="_blank" rel="noopener">${esc(x.id)}</a> (${cdDate(x.as_of)})`).join(', ')}.</p>`;
+  return h;
+}
+function cdPaint(){const el=$('#cdres');if(el)el.innerHTML=cdResults();}
+V.companies=()=>{cdLoad();return `<div class="cs"><input type="search" id="cq" value="${esc(CD.q)}" placeholder="Search a question by name or number" aria-label="Search a question by name or number" autocomplete="off" spellcheck="false"><div id="cdres" aria-live="polite">${cdResults()}</div></div>`;};
+let cdT;
+document.addEventListener('input',e=>{if(e.target.id!=='cq')return;CD.q=e.target.value;clearTimeout(cdT);cdT=setTimeout(()=>{cdRun();CD.open.clear();cdPaint();},70);});
+document.addEventListener('keydown',e=>{if(e.target.id==='cq'&&e.key==='Enter'){e.preventDefault();clearTimeout(cdT);CD.q=e.target.value;cdRun();cdPaint();}});
+
 const AUTHVIEWS=['auth','recover'];
 function render(v){
   if(v)VIEW=v;document.documentElement.dataset.theme=S.theme;
   document.body.classList.toggle('out',AUTHVIEWS.includes(VIEW));
+  document.body.classList.toggle('pitch',VIEW==='companies');
   $('#main').innerHTML=V[VIEW]();if(VIEW==='questions')renderList();
   $$('nav button').forEach(b=>b.dataset.view===VIEW?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current'));
   Net.paint();stale=false;
 }
 function rerender(){if(!USER)return;const y=scrollY,a=document.activeElement,id=a&&a.id;render();scrollTo(0,y);if(id&&$('#'+cssq(id)))$('#'+cssq(id)).focus();}
-const VIEWS=['today','plan','questions','revision','settings'];
+const VIEWS=['today','plan','questions','revision','settings','companies'];
 function go(v){if(v==='sheet')v='questions';if(!VIEWS.includes(v))v='today';history.replaceState(null,'','#'+v);render(v);scrollTo(0,0);}
 
 /* ---------- modals ---------- */
@@ -832,6 +956,8 @@ async function importBackup(o){
 /* ---------- actions ---------- */
 const A={
   nav:a=>go(a.dataset.view),
+  cdpick:a=>{CD.sel=+a.dataset.i;CD.open.clear();cdPaint();},
+  cdrow:a=>{const c=+a.dataset.c;CD.open.has(c)?CD.open.delete(c):CD.open.add(c);cdPaint();},
   tab:a=>{UI.tab=a.dataset.v;$$('[data-act="tab"]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===UI.tab));renderList();},
   week:a=>{const w=+a.dataset.week,sec=a.closest('.wk'),open=!UI.open.has(w);open?UI.open.add(w):UI.open.delete(w);sec.classList.toggle('open',open);a.setAttribute('aria-expanded',open);if(open)sec.querySelector('.wkb').innerHTML=weekBody(w);},
   gotoweek:a=>{UI.open.add(+a.dataset.week);go('plan');const el=$(`[data-week="${a.dataset.week}"].wk`);if(el)el.scrollIntoView();},
