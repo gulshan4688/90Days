@@ -269,8 +269,11 @@ body.pitch #addTop{display:none}
 .tb-tp:hover{color:var(--text)}
 .tb-tp[aria-pressed="true"]{color:var(--text);background:var(--surf2);border-color:var(--acc)}
 .tb-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.tb-bar input[type=search]{width:240px;max-width:100%}
-.tb-h,.tb-r{display:grid;grid-template-columns:minmax(0,1fr) 124px 58px repeat(3,58px) 34px;gap:6px;align-items:center;padding:8px 12px}
+.tb-bar input[type=search]{width:220px;max-width:100%}
+.tb-bar select{font-size:13px;padding:5px 8px}
+.tb-new{border-style:dashed}
+.tb-x:hover{color:var(--bad)}
+.tb-h,.tb-r{display:grid;grid-template-columns:minmax(0,1fr) 124px 58px repeat(3,58px) 40px 34px;gap:6px;align-items:center;padding:8px 12px}
 .tb-h{font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--line)}
 .tb-h span{text-align:center}.tb-h span:nth-child(-n+2){text-align:left}
 .tb-r{border-bottom:1px solid var(--line)}
@@ -283,7 +286,7 @@ body.pitch #addTop{display:none}
   .tb-h{display:none}
   .tb-tps{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;margin-right:-14px;scrollbar-width:none}
   .tb-tps::-webkit-scrollbar{display:none}
-  .tb-r{grid-template-columns:repeat(3,1fr) 34px;gap:8px 4px}
+  .tb-r{grid-template-columns:repeat(3,1fr) 34px 34px;gap:8px 4px}
   .tb-r .qx{grid-column:1/-1}
   .tb-r .d,.tb-r .ct{display:none}
   .tb-r .mo{display:inline}
@@ -869,87 +872,118 @@ document.addEventListener('input',e=>{if(e.target.id!=='cq')return;CD.q=e.target
 document.addEventListener('keydown',e=>{if(e.target.id==='cq'&&e.key==='Enter'){e.preventDefault();clearTimeout(cdT);CD.q=e.target.value;cdRun();cdPaint();}});
 
 /* ---------- Search by Topic ----------
-   A topic-wise question bank with its own 3-stage tracking. It is separate from the 90-day tracker:
-   it reads the built-in question list, but its ticks and added questions live only in TB.doc, which
-   is saved to its own table (topic_bank, one row per user) and copied to this browser. It never
-   writes to tracker tables or tracker state. Every entry carries a timestamp, so copies from
-   different devices merge entry by entry (newest wins) instead of overwriting each other. */
+   A topic-wise question bank with its own 3-stage tracking, notes, removals and custom topics. It is
+   separate from the 90-day tracker: it reads the built-in question list, but everything you change
+   here lives only in TB.doc, saved to its own table (topic_bank, one row per user) and copied to this
+   browser. It never writes to tracker tables or tracker state. Every entry carries a timestamp, so
+   copies from different devices merge entry by entry (newest wins) instead of overwriting each other. */
 const TB_STAGES=['Solved it once','Remembered the pattern','Solved it on my own'];
 const TB_SHORT=['Once','Pattern','Solved'],TB_CLS=['s2','s4','s3'];
-const TB_SQL="create table if not exists public.topic_bank (\n  user_id uuid primary key references auth.users(id) on delete cascade,\n  data jsonb not null default '{}'::jsonb,\n  updated_at timestamptz not null default now()\n);\nalter table public.topic_bank enable row level security;\ncreate policy \"topic_bank: own row only\" on public.topic_bank\n  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);";
-const TB={uid:null,doc:null,loaded:false,loading:null,remote:'unknown',saving:false,again:false,saveT:null,topic:null,q:{}};
-const tbEmpty=()=>({v:1,marks:{},added:{}});
+const TB_PARTS=['marks','added','notes','hidden','topics'];
+const TB_DRANK={E:0,M:1,H:2,T:3};
+const TB_SORTS={def:'Default order',diff:'Difficulty: Easy to Hard',few:'Ticks: fewest first',most:'Ticks: most first'};
+const TB_SQL="-- Safe to run more than once. Creates or fixes ONE table; no other table is read or changed.\ncreate table if not exists public.topic_bank (\n  user_id uuid primary key references auth.users(id) on delete cascade,\n  data jsonb not null default '{}'::jsonb,\n  updated_at timestamptz not null default now()\n);\nalter table public.topic_bank enable row level security;\ngrant select, insert, update, delete on table public.topic_bank to authenticated;\ndrop policy if exists \"topic_bank: own row only\" on public.topic_bank;\ncreate policy \"topic_bank: own row only\" on public.topic_bank\n  for all to authenticated\n  using (auth.uid() = user_id) with check (auth.uid() = user_id);";
+const TB={uid:null,doc:null,loaded:false,loading:null,remote:'unknown',saving:false,again:false,saveT:null,noteT:null,warned:false,topic:null,q:{},sort:'def'};
+try{const v=localStorage.getItem('dsa-topic-sort');if(TB_SORTS[v])TB.sort=v;}catch(e){}
+const tbEmpty=()=>({v:2,marks:{},added:{},notes:{},hidden:{},topics:{}});
 const tbKey=()=>'dsa-topic-bank:'+USER.id;
 function tbReadLocal(){try{const v=localStorage.getItem(tbKey());return v?JSON.parse(v):null;}catch(e){return null;}}
 function tbWriteLocal(){try{localStorage.setItem(tbKey(),JSON.stringify(TB.doc));}catch(e){}}
 function tbMerge(a,b){
   const out=tbEmpty();
   for(const d of [a,b]){if(!d)continue;
-    for(const part of ['marks','added'])for(const [k,v] of Object.entries(d[part]||{}))if(v&&(!out[part][k]||(v.t||0)>(out[part][k].t||0)))out[part][k]=v;}
+    for(const part of TB_PARTS)for(const [k,v] of Object.entries(d[part]||{}))if(v&&(!out[part][k]||(v.t||0)>(out[part][k].t||0)))out[part][k]=v;}
   return out;
 }
 function tbAhead(doc,remote){  // does this copy hold anything the account copy lacks?
-  for(const part of ['marks','added'])for(const [k,v] of Object.entries(doc[part])){const r=remote&&remote[part]&&remote[part][k];if(!r||(v.t||0)>(r.t||0))return true;}
+  for(const part of TB_PARTS)for(const [k,v] of Object.entries(doc[part])){const r=remote&&remote[part]&&remote[part][k];if(!r||(v.t||0)>(r.t||0))return true;}
   return false;
 }
 const tbMissing=e=>{const c=e&&e.code,m=(e&&e.message)||'';return c==='42P01'||c==='PGRST205'||/schema cache|does not exist|could not find the table/i.test(m);};
+const tbDenied=e=>{const c=e&&e.code,m=(e&&e.message)||'';return c==='42501'||/permission denied|row-level security/i.test(m);};
+const tbState=e=>tbMissing(e)?'missing':tbDenied(e)?'denied':'error';
 async function tbRemote(){const d=await call(sb.from('topic_bank').select('data').eq('user_id',USER.id).maybeSingle());return d?d.data:null;}
 function tbLoad(){
-  if(TB.uid!==USER.id){Object.assign(TB,{uid:USER.id,doc:null,loaded:false,loading:null,remote:'unknown'});}
+  if(TB.uid!==USER.id){Object.assign(TB,{uid:USER.id,doc:null,loaded:false,loading:null,remote:'unknown',warned:false});}
   if(!TB.doc)TB.doc=tbMerge(tbEmpty(),tbReadLocal());
   if(TB.loaded||TB.loading)return;
   TB.loading=tbRemote().then(r=>{TB.remote='ok';TB.doc=tbMerge(TB.doc,r);tbWriteLocal();if(tbAhead(TB.doc,r))tbSave();})
-    .catch(e=>{TB.remote=tbMissing(e)?'missing':'error';})
+    .catch(e=>{TB.remote=tbState(e);console.warn('topic_bank:',e);})
     .finally(()=>{TB.loaded=true;TB.loading=null;if(VIEW==='topics')tbPaint();});
 }
 function tbTouch(){tbWriteLocal();clearTimeout(TB.saveT);TB.saveT=setTimeout(tbSave,700);tbSyncLine();}
 async function tbSave(){
-  if(!USER||TB.uid!==USER.id||TB.remote==='missing')return;
+  if(!USER||TB.uid!==USER.id||TB.remote==='missing'||TB.remote==='denied')return;  // kept in this browser until setup is fixed
   if(TB.saving){TB.again=true;return;}
-  TB.saving=true;
+  TB.saving=true;tbSyncLine();
   try{
     const r=await tbRemote();TB.doc=tbMerge(TB.doc,r);tbWriteLocal();   // pick up changes made on other devices first
     await call(sb.from('topic_bank').upsert({user_id:USER.id,data:TB.doc,updated_at:new Date().toISOString()}));
     TB.remote='ok';
-  }catch(e){if(tbMissing(e))TB.remote='missing';else{TB.remote='error';toast(errText(e),true);}}
+  }catch(e){const st=tbState(e);TB.remote=st;console.warn('topic_bank:',e);
+    if(st==='denied'||st==='missing'){if(VIEW==='topics')tbPaint();}
+    else if(!TB.warned){TB.warned=true;toast(isNet(e)?'No connection. Your topic changes are kept in this browser and will sync later.':'Could not save your topic changes to your account. They are kept in this browser.',true);}}
   finally{TB.saving=false;tbSyncLine();if(TB.again){TB.again=false;tbSave();}}
 }
 window.addEventListener('online',()=>{if(USER&&TB.uid===USER.id&&TB.loaded&&TB.remote==='error')tbSave();});
 
 let TB_BASE=null;
-function tbQuestions(){  // built-in bank (read only) plus your own, grouped by topic in bank order
+function tbQuestions(){  // built-in bank (read only) plus your own, grouped by topic; removed questions left out
   if(!TB_BASE){TB_BASE=new Map(STEPS.map(n=>[n,[]]));
     for(const b of BUILT)TB_BASE.get(STEPS[b.step]).push({key:b.id,title:b.title,url:b.url,alt:b.alt,d:b.d,topic:STEPS[b.step],prem:b.prem,meta:b.lists.map(l=>l==='Striver A2Z'?'A2Z #'+b.a2z:l).join(', ')});}
   const by=new Map([...TB_BASE].map(([t,qs])=>[t,qs.slice()]));
+  Object.entries(TB.doc.topics).filter(([,v])=>!v.del).sort((x,y)=>(x[1].c||0)-(y[1].c||0)).forEach(([t])=>{if(!by.has(t))by.set(t,[]);});
   const own=Object.entries(TB.doc.added).filter(([,a])=>!a.del).sort((x,y)=>(x[1].c||0)-(y[1].c||0));
   for(const [id,a] of own){if(!by.has(a.topic))by.set(a.topic,[]);by.get(a.topic).push({key:id,title:a.title,url:a.url,d:a.d,topic:a.topic,own:true,plat:a.plat,meta:'Added by you'});}
+  for(const [t,qs] of by)by.set(t,qs.filter(q=>!tbIsHidden(q.key)));
   return by;
 }
+const tbIsHidden=k=>!!(TB.doc.hidden[k]&&TB.doc.hidden[k].h);
+function tbRemovedIn(topic){  // removed questions of a topic, for restoring
+  const out=[];
+  for(const q of (TB_BASE&&TB_BASE.get(topic))||[])if(tbIsHidden(q.key))out.push(q);
+  for(const [id,a] of Object.entries(TB.doc.added))if(!a.del&&a.topic===topic&&tbIsHidden(id))out.push({key:id,title:a.title,d:a.d});
+  return out;
+}
+const tbIsCustomTopic=t=>!!(TB.doc.topics[t]&&!TB.doc.topics[t].del)&&!(TB_BASE&&TB_BASE.has(t));
 const tbMarks=k=>(TB.doc.marks[k]&&TB.doc.marks[k].s)||[0,0,0];
+const tbTicks=k=>tbMarks(k).reduce((a,b)=>a+(b?1:0),0);
+const tbNote=k=>(TB.doc.notes[k]&&TB.doc.notes[k].n)||'';
 const tbSolvedN=qs=>qs.reduce((n,q)=>n+(tbMarks(q.key)[2]?1:0),0);
 const tbNorm=t=>String(t||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+function tbSorted(list){
+  if(TB.sort==='def')return list;
+  const idx=new Map(list.map((q,i)=>[q.key,i])),dr=q=>TB_DRANK[q.d]??9,ord=(a,b)=>idx.get(a.key)-idx.get(b.key);
+  const cmp={diff:(a,b)=>dr(a)-dr(b)||ord(a,b),
+    few:(a,b)=>tbTicks(a.key)-tbTicks(b.key)||dr(a)-dr(b)||ord(a,b),
+    most:(a,b)=>tbTicks(b.key)-tbTicks(a.key)||dr(a)-dr(b)||ord(a,b)}[TB.sort];
+  return list.slice().sort(cmp);
+}
 function tbRow(q){
-  const m=tbMarks(q.key),k=esc(q.key),plat=q.own?(q.plat==='gfg'?'GFG':'LeetCode'):pf(q.url);
+  const m=tbMarks(q.key),k=esc(q.key),plat=q.own?(q.plat==='gfg'?'GFG':'LeetCode'):pf(q.url),hasN=!!tbNote(q.key);
   return `<div class="tb-r" data-tbrow="${k}">
   <div class="qx"><div class="qt">${qLink(q,esc(q.title))}<span class="tag ok" data-tbsv="${k}"${m[2]?'':' hidden'}>Solved</span></div>
   <div class="qm"><span class="pf">${esc(plat)}${q.prem?' Premium':''}</span>${q.alt?`<a class="pf alt" href="${esc(q.alt)}" target="_blank" rel="noopener">${pf(q.alt)}</a>`:''}${q.meta?`<span>${esc(q.meta)}</span>`:''}<span class="mo">${esc(q.topic)}, <span class="d${q.d}">${DIFF[q.d]}</span></span></div></div>
   <span class="ct" title="${esc(q.topic)}">${esc(q.topic)}</span>
   <span class="d d${q.d}">${DIFF[q.d]}</span>
   ${TB_STAGES.map((s,i)=>`<label class="ck ${TB_CLS[i]}" data-l="${TB_SHORT[i]}" title="${s}"><input type="checkbox" data-tb="${i}" data-tbk="${k}"${m[i]?' checked':''} aria-label="${s}: ${esc(q.title)}"></label>`).join('')}
-  ${q.own?`<button class="ib" data-act="tbdel" data-tbk="${k}" aria-label="Remove ${esc(q.title)}" title="Remove this question">${XI}</button>`:'<span></span>'}</div>`;
+  <button class="ib${hasN?' has':''}" data-act="tbnote" data-tbk="${k}" aria-label="Notes for ${esc(q.title)}" title="${hasN?'View or edit notes':'Add notes'}">${NOTE}</button>
+  <button class="ib tb-x" data-act="tbdel" data-tbk="${k}" aria-label="Remove ${esc(q.title)}" title="Remove from this topic">${XI}</button></div>`;
 }
 function tbRows(){
-  const qs=(tbQuestions().get(TB.topic)||[]),f=tbNorm(TB.q[TB.topic]);
-  const list=f?qs.filter(q=>tbNorm(q.title).includes(f)):qs;
-  if(!qs.length)return `<p class="note">No questions in this topic yet. Use “Add to ${esc(TB.topic)}” to add one.</p>`;
+  const qs=(tbQuestions().get(TB.topic)||[]),f=tbNorm(TB.q[TB.topic]),removed=tbRemovedIn(TB.topic).length;
+  const list=tbSorted(f?qs.filter(q=>tbNorm(q.title).includes(f)):qs);
+  const restore=removed?`<p class="small muted" style="margin-top:8px">${removed} removed from this topic. <button class="lnk" data-act="tbremoved">Restore</button></p>`:'';
+  if(!qs.length)return `<p class="note">No questions in this topic yet. Use “Add to ${esc(TB.topic)}” to add one.</p>${restore}`;
   if(!list.length)return `<p class="note">No question in ${esc(TB.topic)} matches “${esc(TB.q[TB.topic])}”.</p>`;
-  return `<div class="box"><div class="tb-h" aria-hidden="true"><span>Question</span><span>Topic</span><span>Level</span>${TB_SHORT.map((s,i)=>`<span title="${TB_STAGES[i]}">${s}</span>`).join('')}<span></span></div>${list.map(tbRow).join('')}</div>`;
+  return `<div class="box"><div class="tb-h" aria-hidden="true"><span>Question</span><span>Topic</span><span>Level</span>${TB_SHORT.map((s,i)=>`<span title="${TB_STAGES[i]}">${s}</span>`).join('')}<span>Notes</span><span></span></div>${list.map(tbRow).join('')}</div>${restore}`;
 }
 function tbSyncText(){
   if(!TB.loaded)return 'Loading…';
   if(TB.remote==='ok')return TB.saving?'Saving…':'Saved to your account.';
   if(TB.remote==='missing')return 'Saved in this browser only. Run the one-time setup below to save it to your account.';
-  return 'Saved in this browser. Will sync to your account when the connection is back.';
+  if(TB.remote==='denied')return 'Saved in this browser only. Supabase is blocking this tab’s table. Run the setup below once more to fix it.';
+  return 'Saved in this browser. It will sync to your account when the connection is back.';
 }
 function tbSyncLine(){const el=$('#tbsync');if(el)el.textContent=tbSyncText();}
 function tbCount(){const qs=tbQuestions().get(TB.topic)||[],el=$('#tbcount');if(el)el.textContent=`${tbSolvedN(qs)} of ${qs.length} solved`;
@@ -958,16 +992,19 @@ V.topics=()=>{
   tbLoad();
   const by=tbQuestions(),topics=[...by.keys()];
   if(!TB.topic||!by.has(TB.topic))TB.topic=by.has('Arrays')?'Arrays':topics[0];
-  const qs=by.get(TB.topic);
+  const qs=by.get(TB.topic),setup=TB.loaded&&(TB.remote==='missing'||TB.remote==='denied');
   return `<h1>Search by Topic</h1><p class="muted">Practise by topic with three levels: once, remembered the pattern, solved on your own. Separate from your 90-day plan.</p>
   <div class="tb-sync" id="tbsync">${tbSyncText()}</div>
-  ${TB.loaded&&TB.remote==='missing'?`<details class="tb-setup"><summary>One-time setup (1 minute)</summary><p class="muted">In Supabase, open SQL Editor, paste this, and click Run. It only adds a new table; nothing existing is changed. Then reload this page.</p><pre>${esc(TB_SQL)}</pre><button class="btn sm" data-act="tbcopy">Copy SQL</button></details>`:''}
-  <div class="tb-tps" role="group" aria-label="Topics">${topics.map(t=>{const l=by.get(t);return `<button class="tb-tp" data-act="tbtopic" data-t="${esc(t)}" aria-pressed="${t===TB.topic}">${esc(t)}<b>${tbSolvedN(l)}/${l.length}</b></button>`;}).join('')}</div>
-  <div class="sech"><div><h2>${esc(TB.topic)}</h2><div class="small muted" id="tbcount">${tbSolvedN(qs)} of ${qs.length} solved</div></div>
-  <div class="tb-bar"><input type="search" id="tbq" value="${esc(TB.q[TB.topic]||'')}" placeholder="Search ${esc(TB.topic)}" aria-label="Search questions in ${esc(TB.topic)}" autocomplete="off"><button class="btn pri sm" data-act="tbadd">Add to ${esc(TB.topic)}</button></div></div>
+  ${setup?`<details class="tb-setup"${TB.remote==='denied'?' open':''}><summary>${TB.remote==='denied'?'Fix saving to your account (1 minute)':'One-time setup (1 minute)'}</summary><p class="muted">In Supabase, open SQL Editor, paste this, and click Run. It only creates or fixes this tab’s own table; nothing else is changed, and it is safe to run again. Then reload this page.</p><pre>${esc(TB_SQL)}</pre><button class="btn sm" data-act="tbcopy">Copy SQL</button></details>`:''}
+  <div class="tb-tps" role="group" aria-label="Topics">${topics.map(t=>{const l=by.get(t);return `<button class="tb-tp" data-act="tbtopic" data-t="${esc(t)}" aria-pressed="${t===TB.topic}">${esc(t)}<b>${tbSolvedN(l)}/${l.length}</b></button>`;}).join('')}<button class="tb-tp tb-new" data-act="tbnewtopic">+ New topic</button></div>
+  <div class="sech"><div><h2>${esc(TB.topic)}</h2><div class="small muted"><span id="tbcount">${tbSolvedN(qs)} of ${qs.length} solved</span>${tbIsCustomTopic(TB.topic)?` · <button class="lnk" data-act="tbdeltopic">Delete topic</button>`:''}</div></div>
+  <div class="tb-bar"><input type="search" id="tbq" value="${esc(TB.q[TB.topic]||'')}" placeholder="Search ${esc(TB.topic)}" aria-label="Search questions in ${esc(TB.topic)}" autocomplete="off">
+  <select id="tbsort" aria-label="Sort questions">${Object.entries(TB_SORTS).map(([v,l])=>`<option value="${v}"${v===TB.sort?' selected':''}>${l}</option>`).join('')}</select>
+  <button class="btn pri sm" data-act="tbadd">Add to ${esc(TB.topic)}</button></div></div>
   <div id="tbrows">${tbRows()}</div>`;
 };
 function tbPaint(){if(VIEW!=='topics')return;const y=scrollY,f=document.activeElement&&document.activeElement.id;$('#main').innerHTML=V.topics();scrollTo(0,y);if(f&&$('#'+f))$('#'+f).focus();}
+function tbRepaintRows(){const el=$('#tbrows');if(el)el.innerHTML=tbRows();}
 function tbAddForm(){
   return `<div class="mh"><h2 id="mt">Add a question to ${esc(TB.topic)}</h2><button class="btn sm" data-act="close">Close</button></div>
   <div class="frm">
@@ -988,12 +1025,26 @@ function tbSaveAdd(){
   TB.doc.added[id]={title,url,plat:plat==='gfg'?'gfg':'lc',d:['E','M','H'].includes(d)?d:'M',topic:TB.topic,c:now,t:now};
   tbTouch();closeModal();TB.q[TB.topic]='';tbPaint();toast(`Added to ${TB.topic}.`);
 }
+function tbFind(k){const b=BM[k];if(b)return {title:b.title,topic:STEPS[b.step]};const a=TB.doc.added[k];return a?{title:a.title,topic:a.topic}:null;}
+function tbSaveTopic(){
+  const name=$('#tb_topic').value.trim().replace(/\s+/g,' '),err=$('#tb_err');
+  if(!name){err.textContent='Enter a topic name.';return;}
+  if(name.length>60){err.textContent='Keep the name under 60 characters.';return;}
+  if([...tbQuestions().keys()].some(t=>t.toLowerCase()===name.toLowerCase())){err.textContent='That topic already exists.';return;}
+  const now=Date.now();TB.doc.topics[name]={c:now,t:now};tbTouch();closeModal();TB.topic=name;tbPaint();toast(`Topic “${name}” added.`);
+}
 document.addEventListener('change',e=>{const t=e.target;
   if(t.matches('input[data-tb]')){const k=t.dataset.tbk,i=+t.dataset.tb,m=tbMarks(k).slice();m[i]=t.checked?1:0;
     TB.doc.marks[k]={s:m,t:Date.now()};tbTouch();const tag=$(`[data-tbsv="${cssq(k)}"]`);if(tag)tag.hidden=!m[2];tbCount();}
+  else if(t.id==='tbsort'){TB.sort=TB_SORTS[t.value]?t.value:'def';try{localStorage.setItem('dsa-topic-sort',TB.sort);}catch(err){}tbRepaintRows();}
   else if(t.id==='tb_url'){if(/geeksforgeeks\.org/i.test(t.value))$('#tb_plat').value='gfg';else if(/leetcode\.(com|cn)/i.test(t.value))$('#tb_plat').value='lc';}
 });
-document.addEventListener('input',e=>{if(e.target.id!=='tbq')return;TB.q[TB.topic]=e.target.value;const el=$('#tbrows');if(el)el.innerHTML=tbRows();});
+document.addEventListener('input',e=>{const t=e.target;
+  if(t.id==='tbq'){TB.q[TB.topic]=t.value;tbRepaintRows();}
+  else if(t.id==='tb_note'){const k=t.dataset.tbk;TB.doc.notes[k]={n:t.value,t:Date.now()};const st=$('#tb_nst');if(st)st.textContent='Saving…';
+    clearTimeout(TB.noteT);TB.noteT=setTimeout(()=>{tbTouch();if(st&&document.contains(st))st.textContent='Saved';
+      const b=$(`[data-act="tbnote"][data-tbk="${cssq(k)}"]`);if(b)b.classList.toggle('has',!!t.value.trim());},400);}
+});
 
 const AUTHVIEWS=['auth','recover'];
 function render(v){
@@ -1115,9 +1166,22 @@ const A={
   tbtopic:a=>{TB.topic=a.dataset.t;scrollTo(0,0);tbPaint();},
   tbadd:()=>{openModal(tbAddForm());setTimeout(()=>$('#tb_title').focus(),20);},
   tbsaveadd:()=>tbSaveAdd(),
-  tbdel:a=>{const k=a.dataset.tbk,q=TB.doc.added[k];if(!q)return;
-    openModal(`<div class="mh"><h2 id="mt">Remove this question?</h2><button class="btn sm" data-act="close">Close</button></div><p>“${esc(q.title)}” will be removed from ${esc(q.topic)}, with its ticks. Your 90-day tracker is not affected.</p><div style="display:flex;gap:8px;margin-top:16px"><button class="btn bad" data-act="tbdelok" data-tbk="${esc(k)}">Remove</button><button class="btn" data-act="close">Cancel</button></div>`);},
-  tbdelok:a=>{const k=a.dataset.tbk,q=TB.doc.added[k];if(!q)return;const now=Date.now();TB.doc.added[k]={...q,del:true,t:now};TB.doc.marks[k]={s:[0,0,0],t:now};tbTouch();closeModal();tbPaint();toast('Question removed.');},
+  tbnote:a=>{const k=a.dataset.tbk,q=tbFind(k);if(!q)return;
+    openModal(`<div class="mh"><h2 id="mt">Notes: ${esc(q.title)}</h2><button class="btn sm" data-act="close">Close</button></div><label class="fld" style="margin-top:14px"><span>Approach, mistakes, complexity <span id="tb_nst"></span></span><textarea id="tb_note" data-tbk="${esc(k)}" maxlength="20000" style="min-height:220px" placeholder="Write anything you want to remember about this question">${esc(tbNote(k))}</textarea></label><p class="small muted" style="margin-top:8px">Saved automatically as you type. Separate from your 90-day tracker notes.</p>`);
+    setTimeout(()=>{const ta=$('#tb_note');if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},20);},
+  tbdel:a=>{const k=a.dataset.tbk,q=tbFind(k);if(!q)return;
+    openModal(`<div class="mh"><h2 id="mt">Remove this question?</h2><button class="btn sm" data-act="close">Close</button></div><p>“${esc(q.title)}” will be removed from ${esc(q.topic)}. Its ticks and notes are kept, and you can restore it any time from the link under the list. Your 90-day tracker is not affected.</p><div style="display:flex;gap:8px;margin-top:16px"><button class="btn bad" data-act="tbdelok" data-tbk="${esc(k)}">Remove</button><button class="btn" data-act="close">Cancel</button></div>`);},
+  tbdelok:a=>{const k=a.dataset.tbk;TB.doc.hidden[k]={h:1,t:Date.now()};tbTouch();closeModal();tbPaint();toast('Question removed. You can restore it from under the list.');},
+  tbremoved:()=>{const list=tbRemovedIn(TB.topic);
+    openModal(`<div class="mh"><h2 id="mt">Removed from ${esc(TB.topic)}</h2><button class="btn sm" data-act="close">Close</button></div><div class="box" style="margin-top:14px">${list.map(q=>`<div class="ritem"><span>${esc(q.title)} <span class="small d${q.d}">${DIFF[q.d]||''}</span></span><button class="btn sm" data-act="tbrestore" data-tbk="${esc(q.key)}">Restore</button></div>`).join('')}</div>`);},
+  tbrestore:a=>{const k=a.dataset.tbk;TB.doc.hidden[k]={h:0,t:Date.now()};tbTouch();const row=a.closest('.ritem');if(row)row.remove();if(!$('#mbox .ritem'))closeModal();tbPaint();toast('Question restored.');},
+  tbnewtopic:()=>{openModal(`<div class="mh"><h2 id="mt">New topic</h2><button class="btn sm" data-act="close">Close</button></div><div class="frm"><label class="fld full"><span>Topic name</span><input type="text" id="tb_topic" maxlength="60" placeholder="e.g. Segment Tree, Company: Amazon"></label><p class="aerr full" id="tb_err" role="alert"></p></div><div style="display:flex;gap:8px;margin-top:16px"><button class="btn pri" data-act="tbsavetopic">Add topic</button><button class="btn" data-act="close">Cancel</button></div>`);setTimeout(()=>$('#tb_topic').focus(),20);},
+  tbsavetopic:()=>tbSaveTopic(),
+  tbdeltopic:()=>{const t=TB.topic,n=(tbQuestions().get(t)||[]).length;
+    openModal(`<div class="mh"><h2 id="mt">Delete “${esc(t)}”?</h2><button class="btn sm" data-act="close">Close</button></div><p>${n?`Its ${n} question${n>1?'s':''} will be removed too.`:'The topic is empty.'} Built-in topics and your 90-day tracker are not affected.</p><div style="display:flex;gap:8px;margin-top:16px"><button class="btn bad" data-act="tbdeltopicok">Delete topic</button><button class="btn" data-act="close">Cancel</button></div>`);},
+  tbdeltopicok:()=>{const t=TB.topic,now=Date.now();if(!tbIsCustomTopic(t))return;TB.doc.topics[t]={...TB.doc.topics[t],del:true,t:now};
+    for(const [id,q] of Object.entries(TB.doc.added))if(q.topic===t&&!q.del)TB.doc.added[id]={...q,del:true,t:now};
+    tbTouch();closeModal();TB.topic=null;tbPaint();toast(`Topic “${t}” deleted.`);},
   tbcopy:()=>{navigator.clipboard&&navigator.clipboard.writeText(TB_SQL).then(()=>toast('SQL copied.'),()=>toast('Select the text and copy it manually.',true));},
   cdpick:a=>{CD.sel=+a.dataset.i;CD.open.clear();cdPaint();},
   cdrow:a=>{const c=+a.dataset.c;CD.open.has(c)?CD.open.delete(c):CD.open.add(c);cdPaint();},
